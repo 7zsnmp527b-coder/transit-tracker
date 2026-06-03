@@ -1,59 +1,103 @@
 const fetch = require("node-fetch");
 
-// NTA GTFS-RT vehicle positions feed
-const VEHICLE_POSITIONS_URL =
-  "https://api.nationaltransport.ie/gtfsr/v2/vehicles?format=json";
+// Aircoach open API — no key required
+const BASE = "https://www.aircoach.ie/api";
 
-// Aircoach route IDs in NTA GTFS (routes 702, 703, 704 serve airport)
-const AIRCOACH_ROUTES = ["702", "703", "704", "700X"];
+// Routes that serve Drumcondra ↔ Airport
+const ROUTES = ["700", "700X"];
 
-// Key stop IDs (NTA GTFS stop_id values)
-// Drumcondra: multiple stops — using Drumcondra Road stops for Aircoach
-// Dublin Airport: stop_id varies by terminal
-const KEY_STOPS = {
-  drumcondra: ["8220DB000454", "8220DB000455"], // Drumcondra Rd stops
-  airport: ["8220DB000888", "8220DB007779"],    // Dublin Airport T1/T2 Aircoach
+// Verified ATCOcodes (2026-06-03)
+const STOPS = {
+  drumcondra_inbound:  "8220DB000017", // Drumcondra Rail Station (toward airport)
+  drumcondra_outbound: "8220DB000047", // Drumcondra opp Rail Station (toward city/south)
+  airport_t1:          "8240000551",
+  airport_t2:          "8240TR000285",
 };
+
+async function getTimetable(route, direction) {
+  const url = `${BASE}/track-my-coach-service-timetables?operator=ACAH&service=${route}&direction=${direction}&_format=json`;
+  const r = await fetch(url, { headers: { "Accept": "application/json" } });
+  if (!r.ok) throw new Error(`Aircoach API ${r.status}`);
+  return r.json();
+}
+
+function extractStopTimes(trips, targetAtcocode) {
+  const results = [];
+  for (const trip of trips) {
+    const stop = (trip.stops || []).find((s) => s.atcocode === targetAtcocode);
+    if (stop) {
+      results.push({
+        route:       trip.line,
+        direction:   trip.dir,
+        description: trip.description,
+        stopName:    stop.name,
+        atcocode:    stop.atcocode,
+        time:        stop.time,
+        date:        stop.date,
+        aimed: {
+          arrival:   stop.aimed?.arrival?.time,
+          departure: stop.aimed?.departure?.time,
+        },
+        lat: stop.latitude,
+        lng: stop.longitude,
+      });
+    }
+  }
+  return results;
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  const apiKey = process.env.NTA_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "NTA_API_KEY not configured" });
-  }
-
   try {
-    const r = await fetch(VEHICLE_POSITIONS_URL, {
-      headers: { "x-api-key": apiKey },
+    // Fetch timetables for both routes, both directions in parallel
+    const fetches = ROUTES.flatMap((route) => [
+      getTimetable(route, "inbound").then((trips) => ({
+        route, direction: "inbound", trips,
+      })),
+      getTimetable(route, "outbound").then((trips) => ({
+        route, direction: "outbound", trips,
+      })),
+    ]);
+
+    const results = await Promise.allSettled(fetches);
+    const allTrips = { inbound: [], outbound: [] };
+
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        const { direction, trips } = r.value;
+        allTrips[direction].push(...trips);
+      }
+    }
+
+    // Drumcondra → Airport (outbound coaches): use outbound timetable, Drumcondra outbound stop
+    const drumToAirport = extractStopTimes(
+      allTrips.outbound,
+      STOPS.drumcondra_outbound
+    ).sort((a, b) => (a.time > b.time ? 1 : -1));
+
+    // Airport → Drumcondra (inbound coaches): use inbound timetable, Drumcondra inbound stop
+    const airportToDrum = extractStopTimes(
+      allTrips.inbound,
+      STOPS.drumcondra_inbound
+    ).sort((a, b) => (a.time > b.time ? 1 : -1));
+
+    // Airport departures (outbound origin stops)
+    const airportDeps = extractStopTimes(
+      allTrips.outbound,
+      STOPS.airport_t1
+    ).sort((a, b) => (a.time > b.time ? 1 : -1));
+
+    res.json({
+      drumcondra: {
+        toAirport:  drumToAirport,
+        fromAirport: airportToDrum,
+      },
+      airport: {
+        departures: airportDeps,
+      },
+      stops: STOPS,
+      fetchedAt: new Date().toISOString(),
     });
-    if (!r.ok) throw new Error(`NTA API ${r.status}: ${await r.text()}`);
-    const data = await r.json();
-
-    const vehicles = (data.entity || [])
-      .filter((e) => e.vehicle)
-      .map((e) => {
-        const v = e.vehicle;
-        const routeId = v.trip?.routeId || "";
-        return {
-          id: e.id,
-          routeId,
-          lat: v.position?.latitude,
-          lng: v.position?.longitude,
-          bearing: v.position?.bearing,
-          speed: v.position?.speed,
-          tripId: v.trip?.tripId,
-          stopId: v.stopId,
-          currentStatus: v.currentStatus,
-          timestamp: v.timestamp,
-        };
-      })
-      .filter((v) =>
-        AIRCOACH_ROUTES.some((r) =>
-          v.routeId.includes(r)
-        )
-      );
-
-    res.json({ vehicles, keyStops: KEY_STOPS });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

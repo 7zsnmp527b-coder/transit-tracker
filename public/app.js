@@ -145,25 +145,39 @@ function renderBuses() {
 
   if (!busData) { el.innerHTML = `<p class="empty-state">Loading coaches…</p>`; return; }
 
-  const vehicles = (busData.vehicles || []).filter(cfg.busFilter).slice(0, 8);
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
 
-  if (!vehicles.length) {
-    el.innerHTML = `<p class="empty-state">No live Aircoach vehicles found</p>`;
+  function futureTimes(trips) {
+    return (trips || []).filter((t) => {
+      if (!t.time) return false;
+      const [h, m] = t.time.split(":").map(Number);
+      return (h * 60 + m) >= nowMins - 2;
+    }).slice(0, 6);
+  }
+
+  const trips = currentRoute === "outbound"
+    ? futureTimes(busData.drumcondra?.toAirport)
+    : futureTimes(busData.drumcondra?.fromAirport);
+
+  if (!trips.length) {
+    el.innerHTML = `<p class="empty-state">No upcoming Aircoach departures</p>`;
     return;
   }
 
-  el.innerHTML = vehicles.map((v) => {
-    const status = v.currentStatus === 1 ? "Approaching stop"
-                 : v.currentStatus === 2 ? "At stop"
-                 : "In transit";
+  el.innerHTML = trips.map((t) => {
+    const [h, m] = t.time.split(":").map(Number);
+    const diffMin = (h * 60 + m) - nowMins;
+    const badge = diffMin <= 5  ? badgeHTML(diffMin <= 0 ? "Due" : `${diffMin} min`, diffMin <= 2 ? "amber" : "green")
+                                : badgeHTML(t.time, "green");
     return `
       <div class="departure-row">
-        <div class="dep-time" style="font-size:0.9rem;color:var(--bus)">Route<br>${v.routeId}</div>
+        <div class="dep-time" style="color:var(--bus)">${t.time}</div>
         <div class="dep-info">
-          <div class="dep-dest">${status}</div>
-          <div class="dep-sub">Vehicle ${v.id.slice(-6)}</div>
+          <div class="dep-dest">Route ${t.route}</div>
+          <div class="dep-sub">${t.stopName}</div>
         </div>
-        ${badgeHTML("Live", "green")}
+        ${badge}
       </div>`;
   }).join("");
 }
@@ -182,15 +196,11 @@ function renderMap() {
     });
   }
 
-  if (busData?.vehicles) {
-    busData.vehicles.forEach((v) => {
-      if (!v.lat || !v.lng) return;
-      const icon = L.divIcon({ className: "bus-marker", iconSize: [12, 12] });
-      L.marker([v.lat, v.lng], { icon })
-        .bindPopup(`<b>Aircoach ${v.routeId}</b><br>Vehicle ${v.id.slice(-6)}`)
-        .addTo(busLayer);
-    });
-  }
+  // Aircoach API provides timetables not live positions — mark Drumcondra stop
+  const drumIcon = L.divIcon({ className: "bus-marker", iconSize: [12, 12] });
+  L.marker([LOCATIONS.drumcondra.lat, LOCATIONS.drumcondra.lng], { icon: drumIcon })
+    .bindPopup("<b>Aircoach Stop</b><br>Drumcondra Rail Station<br>Routes 700, 700X")
+    .addTo(busLayer);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
