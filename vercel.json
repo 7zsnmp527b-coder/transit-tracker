@@ -1,8 +1,5 @@
 {
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" }
-  ],
-  "env": {
-    "NTA_API_KEY": "@nta_api_key"
-  }
+  ]
 }
