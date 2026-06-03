@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Transit Tracker — Clondalkin → Airport</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="header">
+    <h1>🚆 Clondalkin → Airport</h1>
+    <div id="route-tabs">
+      <button class="tab active" data-route="outbound">Clondalkin → Airport</button>
+      <button class="tab" data-route="inbound">Airport → Clondalkin</button>
+    </div>
+    <span id="last-update">Updating...</span>
+  </div>
+
+  <div id="main">
+    <div id="boards">
+      <div class="board" id="board-train">
+        <h2>🚉 Train <span id="train-station-label">Clondalkin/Fonthill</span></h2>
+        <div id="train-departures">Loading...</div>
+      </div>
+      <div class="board" id="board-bus">
+        <h2>🚌 Aircoach from <span id="bus-stop-label">Drumcondra</span></h2>
+        <div id="bus-departures">Loading...</div>
+      </div>
+    </div>
+    <div id="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

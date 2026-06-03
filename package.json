@@ -1,0 +1,16 @@
+{
+  "name": "transit-tracker",
+  "version": "1.0.0",
+  "description": "Irish Rail + Aircoach live tracker for Clondalkin–Drumcondra–Airport route",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {
+    "gtfs-realtime-bindings": "^2.0.0",
+    "node-fetch": "^2.7.0",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "vercel": "^33.0.0"
+  }
+}
